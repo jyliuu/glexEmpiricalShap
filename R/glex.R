@@ -314,6 +314,70 @@ tree_fun_emp <- function(tree, trees, x, all_S, probFunction = NULL) {
   m_all
 }
 
+tree_fun_emp_augmented <- function(tree, trees, x, all_S) {
+  print(paste('Tree', tree))
+  Tree <- NULL
+  Feature_num <- NULL
+  Node <- NULL
+  PathData <- NULL
+  # Calculate matrix
+  tree_info <- trees[Tree == tree, ]
+  augmented <- augment_tree(tree_info, x)
+  T <- setdiff(tree_info[, sort(unique(Feature_num))], 0L)
+  U <- subsets(T)
+  n <- nrow(x)
+
+  leaf_eval_fun <- function(node_idx, to_marginalize) {
+    to_explain <- setdiff(T, to_marginalize)
+    print(paste("node", node_idx, "to_explain", paste(to_explain, collapse = " "), collapse = " "))
+    path_data <- augmented[Node == node_idx, PathData][[1]]
+
+    to_explain_list <- paste0(
+      sort(intersect(path_data$encountered, to_explain)),
+      collapse = "-"
+    )
+    if (to_explain_list == "")
+      to_explain_list <- "0"
+
+    p <- length(path_data$path_dat[[to_explain_list]]) / n
+    return(p)
+  }
+
+  mat <- recurseAugmented(
+    x, tree_info$Feature_num,
+    tree_info$Split,
+    tree_info$Yes,
+    tree_info$No,
+    tree_info$Quality,
+    integer(0),
+    U, 0, leaf_eval_fun
+  )
+
+  colnames(mat) <- vapply(U, function(u) {
+    paste(sort(colnames(x)[u]), collapse = ":")
+  }, FUN.VALUE = character(1))
+  # Init m matrix
+  m_all <- matrix(0, nrow = nrow(x), ncol = length(all_S))
+  colnames(m_all) <- vapply(all_S, function(s) {
+    paste(sort(colnames(x)[s]), collapse = ":")
+  }, FUN.VALUE = character(1))
+
+  # Calculate contribution, use only selected features and subsets with not more than max_interaction involved features
+  for (S in intersect(U, all_S)) {
+    colname <- paste(sort(colnames(x)[S]), collapse = ":")
+    if (nchar(colname) == 0) {
+      colnum <- 1
+    } else {
+      colnum <- which(colnames(m_all) == colname)
+    }
+    contribute(mat, m_all, S, T, U, colnum-1)
+  }
+
+  # Return m matrix
+  m_all
+
+}
+
 #' Internal tree function wrapper that returns the actual tree function
 #' @param trees data.table
 #' @param x observerations, matrix like data-structure
@@ -329,7 +393,7 @@ tree_fun_wrapper <- function(trees, x, all_S, probFunction) {
       stop("The probability function can either be 'path-dependent' or 'empirical' when specified as a string")
     }
   } else if (is.function(probFunction) || is.null(probFunction)) {
-    return(function(tree) tree_fun_emp(tree, trees, x, all_S, probFunction))
+    return(function(tree) tree_fun_emp_augmented(tree, trees, x, all_S))
   } else {
     stop("The probability function can either be a string ('path-dependent', 'empirical'), NULL, or a function(coords, lb, ub) type function")
   }
@@ -339,12 +403,12 @@ calc_components <- function(trees, x, max_interaction, features, probFunction = 
 
   # Convert features to numerics (leaf = 0)
   trees[, Feature_num := as.integer(factor(Feature, levels = c("Leaf", colnames(x)))) - 1L]
-  
+
   # Calculate coverage from theoretical distribution, if given
-  
+
   if (is.null(features)) {
     # All subsets S (that appear in any of the trees)
-    all_S <- unique(do.call(c,lapply(0:max(trees$Tree), function(tree) {
+    all_S <- unique(do.call(c, lapply(0:max(trees$Tree), function(tree) {
       subsets(trees[Tree == tree & Feature_num > 0, sort(unique(Feature_num))])
     })))
   } else {

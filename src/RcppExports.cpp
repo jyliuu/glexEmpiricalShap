@@ -57,6 +57,26 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// recurseAugmented
+Rcpp::NumericMatrix recurseAugmented(Rcpp::NumericMatrix& x, Rcpp::IntegerVector& feature, Rcpp::NumericVector& split, Rcpp::IntegerVector& yes, Rcpp::IntegerVector& no, Rcpp::NumericVector& quality, Rcpp::IntegerVector& cover, std::vector<std::vector<unsigned int> >& U, unsigned int node, Rcpp::Function leafEvalFunction);
+RcppExport SEXP _glex_recurseAugmented(SEXP xSEXP, SEXP featureSEXP, SEXP splitSEXP, SEXP yesSEXP, SEXP noSEXP, SEXP qualitySEXP, SEXP coverSEXP, SEXP USEXP, SEXP nodeSEXP, SEXP leafEvalFunctionSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix& >::type x(xSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector& >::type feature(featureSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector& >::type split(splitSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector& >::type yes(yesSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector& >::type no(noSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector& >::type quality(qualitySEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector& >::type cover(coverSEXP);
+    Rcpp::traits::input_parameter< std::vector<std::vector<unsigned int> >& >::type U(USEXP);
+    Rcpp::traits::input_parameter< unsigned int >::type node(nodeSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Function >::type leafEvalFunction(leafEvalFunctionSEXP);
+    rcpp_result_gen = Rcpp::wrap(recurseAugmented(x, feature, split, yes, no, quality, cover, U, node, leafEvalFunction));
+    return rcpp_result_gen;
+END_RCPP
+}
 // recurse
 Rcpp::NumericMatrix recurse(Rcpp::NumericMatrix& x, Rcpp::IntegerVector& feature, Rcpp::NumericVector& split, Rcpp::IntegerVector& yes, Rcpp::IntegerVector& no, Rcpp::NumericVector& quality, Rcpp::NumericMatrix& lb, Rcpp::NumericMatrix& ub, Rcpp::IntegerVector& cover, std::vector<std::vector<unsigned int> >& U, unsigned int node, Rcpp::Function probFunction);
 RcppExport SEXP _glex_recurse(SEXP xSEXP, SEXP featureSEXP, SEXP splitSEXP, SEXP yesSEXP, SEXP noSEXP, SEXP qualitySEXP, SEXP lbSEXP, SEXP ubSEXP, SEXP coverSEXP, SEXP USEXP, SEXP nodeSEXP, SEXP probFunctionSEXP) {
@@ -118,6 +138,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_glex_find_term_matches", (DL_FUNC) &_glex_find_term_matches, 2},
     {"_glex_empProbFunction", (DL_FUNC) &_glex_empProbFunction, 4},
     {"_glex_recurseRcppEmpProbfunction", (DL_FUNC) &_glex_recurseRcppEmpProbfunction, 11},
+    {"_glex_recurseAugmented", (DL_FUNC) &_glex_recurseAugmented, 10},
     {"_glex_recurse", (DL_FUNC) &_glex_recurse, 12},
     {"_glex_recurseAlgorithm2", (DL_FUNC) &_glex_recurseAlgorithm2, 9},
     {"_glex_contribute", (DL_FUNC) &_glex_contribute, 6},

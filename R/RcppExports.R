@@ -13,6 +13,10 @@ recurseRcppEmpProbfunction <- function(x, feature, split, yes, no, quality, lb, 
     .Call(`_glex_recurseRcppEmpProbfunction`, x, feature, split, yes, no, quality, lb, ub, cover, U, node)
 }
 
+recurseAugmented <- function(x, feature, split, yes, no, quality, cover, U, node, leafEvalFunction) {
+    .Call(`_glex_recurseAugmented`, x, feature, split, yes, no, quality, cover, U, node, leafEvalFunction)
+}
+
 recurse <- function(x, feature, split, yes, no, quality, lb, ub, cover, U, node, probFunction) {
     .Call(`_glex_recurse`, x, feature, split, yes, no, quality, lb, ub, cover, U, node, probFunction)
 }
