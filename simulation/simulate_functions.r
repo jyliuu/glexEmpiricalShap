@@ -2,17 +2,36 @@ library(mvtnorm)
 library(xgboost)
 
 
-simulate_dat <- function(mu, sigma, n = 1e5) {
-  p <- length(mu)
-  # Simulate data
-  x <- matrix(rmvnorm(n = n, mean = mu, sigma = sigma),
-    ncol = p,
-    dimnames = list(NULL, paste0("x", seq_len(p)))
-  )
-  lp <- x[, 1] + x[, 2] + 2 * x[, 1] * x[, 2]
-  y <- lp + rnorm(n)
+simulate_dat_10x <- function(n = 1e3) {
+  diag_matrix <- diag(rep(3, 10))
+  mirrored_matrix <- apply(diag_matrix / 5, 2, rev)
+  cov_matrix <- diag_matrix + mirrored_matrix
 
-  # Return the dataset
+  x <- rmvnorm(n, rep(1, 10), cov_matrix)
+  colnames(x) <- paste0("x", seq_len(ncol(x)))
+  y <- 3 * sin(x[, 1]) +
+    2.5 * cos(0.3 * x[, 2]) +
+    1.12 * x[, 3] +
+    sin(x[, 4] * x[, 5]) +
+    0.7 * x[, 6] * x[, 7] +
+    0.7 * x[, 8] + 0.1 * x[, 9] * x[, 10] + rnorm(n, 0, 0.1)
+
+  list(x = x, y = y)
+}
+
+simulate_dat_7x <- function(n = 1e3) {
+  diag_matrix <- diag(rep(3, 7))
+  mirrored_matrix <- apply(diag_matrix / 5, 2, rev)
+  cov_matrix <- diag_matrix + mirrored_matrix
+
+  x <- rmvnorm(n, rep(1, 7), cov_matrix)
+  colnames(x) <- paste0("x", seq_len(ncol(x)))
+  y <- 3 * sin(x[, 1]) +
+    2.5 * cos(0.3 * x[, 2]) +
+    1.12 * x[, 3] +
+    sin(x[, 4] * x[, 5]) +
+    0.7 * x[, 6] * x[, 7] + rnorm(n, 0, 0.1)
+
   list(x = x, y = y)
 }
 
@@ -31,8 +50,11 @@ simulate_dat_wrapped <- function(n, c, s = FALSE) {
 }
 
 true_shap <- function(x1, x2, coord = 1, cov_base = 0.3) {
-  if (coord == 1) x1 + x1 * x2 - cov_base
-  else x2 + x1 * x2 - cov_base
+  if (coord == 1) {
+    x1 + x1 * x2 - cov_base
+  } else {
+    x2 + x1 * x2 - cov_base
+  }
 }
 
 true_shap2 <- function(x, coord = 1, cov_base = 0.3) {
