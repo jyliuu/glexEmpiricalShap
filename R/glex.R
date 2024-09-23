@@ -63,6 +63,7 @@ glex.rpf <- function(object, x, max_interaction = NULL, features = NULL, ...) {
     object = object, new_data = x, max_interaction = max_interaction,
     predictors = features
   )
+
   # class(ret) <- c("glex", "rpf_components", class(ret))
   ret
 }
@@ -113,8 +114,6 @@ glex.xgb.Booster <- function(object, x, max_interaction = NULL, features = NULL,
 
   # Calculate components
   res <- calc_components(trees, x, max_interaction, features, probFunction)
-  res$intercept <- res$intercept + 0.5
-  
   # Return components
   res
 } 
@@ -315,7 +314,6 @@ tree_fun_emp <- function(tree, trees, x, all_S, probFunction = NULL) {
 }
 
 tree_fun_emp_augmented <- function(tree, trees, x, all_S) {
-  print(paste('Tree', tree))
   Tree <- NULL
   Feature_num <- NULL
   Node <- NULL
@@ -329,7 +327,6 @@ tree_fun_emp_augmented <- function(tree, trees, x, all_S) {
 
   leaf_eval_fun <- function(node_idx, to_marginalize) {
     to_explain <- setdiff(T, to_marginalize)
-    print(paste("node", node_idx, "to_explain", paste(to_explain, collapse = " "), collapse = " "))
     path_data <- augmented[Node == node_idx, PathData][[1]]
 
     to_explain_list <- paste0(
@@ -384,6 +381,10 @@ tree_fun_emp_augmented <- function(tree, trees, x, all_S) {
 #' @param all_S all combinations of interactions up to certain order
 #' @param probFunction probFunction that was supplied to \code{glex}
 tree_fun_wrapper <- function(trees, x, all_S, probFunction) {
+  if (is.data.frame(x)) {
+    x <- as.matrix(x)
+  }
+
   if (is.character(probFunction)) {
     if (probFunction == "path-dependent") {
       return(function(tree) tree_fun_path_dependent(tree, trees, x, all_S))
@@ -402,8 +403,12 @@ tree_fun_wrapper <- function(trees, x, all_S, probFunction) {
 calc_components <- function(trees, x, max_interaction, features, probFunction = NULL) {
 
   # Convert features to numerics (leaf = 0)
-  trees[, Feature_num := as.integer(factor(Feature, levels = c("Leaf", colnames(x)))) - 1L]
-
+  if (startsWith(trees$Feature[1], "x")) {
+    trees[, Feature_num := as.integer(factor(Feature, levels = c("Leaf", colnames(x)))) - 1L]
+  } else {
+    trees[, Feature_num := as.integer(Feature) + 1]
+    trees[is.na(Feature_num), Feature_num := 0]
+  }
   # Calculate coverage from theoretical distribution, if given
 
   if (is.null(features)) {
@@ -438,25 +443,8 @@ calc_components <- function(trees, x, max_interaction, features, probFunction = 
     m_all <- foreach(j = idx, .combine = "+") %do% tree_fun(j)
   }
 
-  d <- get_degree(colnames(m_all))
-
-  # Overall feature effect is sum of all elements where feature is involved
-  interactions <- sweep(m_all[, -1, drop = FALSE], MARGIN = 2, d[-1], "/")
-
-  # SHAP values are the sum of the m's * 1/d
-  shap <- vapply(colnames(x), function(col) {
-    idx <- find_term_matches(col, colnames(interactions))
-
-    if (length(idx) == 0) {
-      numeric(nrow(interactions))
-    } else {
-      rowSums(interactions[, idx, drop = FALSE])
-    }
-  }, FUN.VALUE = numeric(nrow(x)))
-
   # Return shap values, decomposition and intercept
   ret <- list(
-    shap = data.table::setDT(as.data.frame(shap)),
     m = data.table::setDT(as.data.frame(m_all[, -1])),
     intercept = unique(m_all[, 1]),
     x = data.table::setDT(as.data.frame(x))
