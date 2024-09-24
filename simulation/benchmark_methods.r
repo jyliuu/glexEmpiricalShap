@@ -1,5 +1,4 @@
 devtools::load_all()
-setwd("simulation")
 source("export_data.r")
 source("simulate_functions.r")
 source("cv.r")
@@ -10,8 +9,8 @@ sim_dat_fit_xgboost <- function(sim_dat_fun, learner_fun, save = TRUE) {
   dataset <- sim_dat_fun()
   xg <- learner_fun(dataset)
   if (save) {
-    export_data_as_csv(dataset, "/Users/sqf320/Documents/shap/simulation/data/data.csv")
-    export_xgboost_model(xg, "/Users/sqf320/Documents/shap/simulation/data/model.model")
+    export_data_as_csv(dataset, "simulation_depends/data.csv")
+    export_xgboost_model(xg, "simulation_depends/model.model")
   }
 
   return(list(xg = xg, dataset = dataset))
@@ -29,8 +28,8 @@ get_splitted_features <- function(xg) {
 benchmark_glex_xg_vs_N <- function(
   xg,
   dat,
-  N = (21:40) * 100,
-  min_iterations = 5,
+  N = (1:5) * 100,
+  min_iterations = 55,
   save_name = NULL
 ) {
   bench_res_increasing_N <- bench::press(
@@ -50,8 +49,9 @@ benchmark_glex_xg_vs_N <- function(
   bench_res_increasing_N
 }
 
+
 get_dat <- function() {
-  df <- import_data_from_csv("/Users/sqf320/Documents/shap/simulation/data/data.csv")
+  df <- import_data_from_csv("simulation_depends/data.csv")
   x <- subset(df, select = -y)
   y <- df$y
   list(x = x, y = y)
@@ -67,21 +67,37 @@ train_learner <- function(dataset) {
 }
 
 get_learner <- function(d) {
-  xg <- import_xgboost_model("/Users/sqf320/Documents/shap/simulation/data/model.model")
+  xg <- import_xgboost_model("simulation_depends/model.model")
   xg
 }
 save_bench_res <- function(bench_res, save_name) {
   saveRDS(bench_res, save_name)
 }
 
-# dataset_and_xg <- sim_dat_fit_xgboost(get_dat, get_learner, save = FALSE)
+# dataset_and_xg <- sim_dat_fit_xgboost(get_dat, train_learner, save = FALSE)
+# dataset <- dataset_and_xg$dataset
+# xg <- dataset_and_xg$xg
 dataset <- get_dat()
 xg <- get_learner()
 
-bench_res <- benchmark_glex_xg_vs_N(xg, dataset$x)
-save_bench_res(bench_res, "res/bench_times_glex2100.rds")
 
-object3 <- glex::glex(xg, dataset$x[1:100, ]) # using empirical marginals
-autoplot(object3, c("x1"))
+# Function to run the benchmark for a given i
+run_benchmark <- function(i) {
+  benchmark_glex_xg_vs_N(
+    xg, dataset$x,
+    N = i * 1000,
+    min_iterations = 300,
+    save_name = paste0("bench_times_glex", i, ".rds")
+  )
+}
 
-dat <- as.data.frame(dataset$x)
+
+args <- commandArgs(trailingOnly = TRUE)
+
+# Extract the first argument (the parameter value)
+param <- as.numeric(args[1])
+
+# Your R code here using 'param'
+print(paste("Running with parameter:", param))
+
+run_benchmark(param)
