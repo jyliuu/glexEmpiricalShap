@@ -34,12 +34,14 @@ obtain_glex_objs <- function(dataset, model, cov_args, only_emp_p = F) {
 
 obtain_shap_MSEs <- function(true_shap_fun, glex_true_p, to_explain) {
   emp_shap_MSEs <- lapply(to_explain, function(glex_obj) get_emp_shap_MSE(glex_obj, glex_true_p))
+  emp_shap_REs <- lapply(to_explain, function(glex_obj) get_emp_shap_RE(glex_obj, glex_true_p))
   true_shap_MSEs <- lapply(to_explain, function(glex_obj) get_true_shap_MSE(glex_obj, true_shap_fun))
 
   emp_shap_MSE_df <- do.call(rbind, lapply(emp_shap_MSEs, unlist))
+  emp_shap_RE_df <- do.call(rbind, lapply(emp_shap_REs, unlist))
   true_shap_MSE_df <- do.call(rbind, lapply(true_shap_MSEs, unlist))
 
-  list(A_shap_mse = true_shap_MSE_df, B_shap_mse = emp_shap_MSE_df)
+  list(A_shap_mse = true_shap_MSE_df, B_shap_mse = emp_shap_MSE_df, B_shap_re = emp_shap_RE_df)
 }
 
 obtain_component_MSEs <- function(true_components_fun, glex_true_p, to_explain) {

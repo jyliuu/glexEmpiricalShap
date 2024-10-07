@@ -1,9 +1,28 @@
+
+
+install_if_missing <- function(packages) {
+  # Find the packages that are not installed
+  missing_packages <- packages[!(packages %in% installed.packages()[, "Package"])]
+  
+  # Install the missing packages
+  if (length(missing_packages)) {
+    install.packages(missing_packages, dependencies = TRUE)
+  }
+  
+  # Load all packages
+  invisible(lapply(packages, library, character.only = TRUE))
+}
+
+# Example usage
+required_packages <- c("scico", "ggplot2", "dplyr", "data.table", "xgboost", "tidyverse", "bench")
+
+install_if_missing(required_packages)
+
 devtools::load_all()
 source("export_data.r")
 source("simulate_functions.r")
 source("cv.r")
-library(xgboost)
-library(tidyverse)
+
 
 sim_dat_fit_xgboost <- function(sim_dat_fun, learner_fun, save = TRUE) {
   dataset <- sim_dat_fun()
@@ -67,14 +86,14 @@ train_learner <- function(dataset) {
 }
 
 get_learner <- function(d) {
-  xg <- import_xgboost_model("simulation_depends/model.model")
+  xg <- import_xgboost_model("/Users/sqf320/Documents/shap/simulation/data/model.model")
   xg
 }
 save_bench_res <- function(bench_res, save_name) {
   saveRDS(bench_res, save_name)
 }
 
-# dataset_and_xg <- sim_dat_fit_xgboost(get_dat, train_learner, save = FALSE)
+dataset_and_xg <- sim_dat_fit_xgboost(get_dat, train_learner, save = FALSE)
 # dataset <- dataset_and_xg$dataset
 # xg <- dataset_and_xg$xg
 dataset <- get_dat()

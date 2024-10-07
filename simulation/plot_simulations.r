@@ -1,15 +1,22 @@
 library(patchwork)
 library(reshape2)
 library(tidyverse)
+source("main_loop.r")
 theme_set(theme_bw())
 theme_update(
   panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
   panel.border = element_rect(colour = "black", fill = NA, size = 0.6)
 )
-ggplot_colors <- scales::hue_pal()(3) # Generates the first two default ggplot colors
+ggplot_colors <- scales::hue_pal()(5) # Generates the first two default ggplot colors
 
 
-BoxPlot <- function(res, settings, group = n, coord, MSEtype, MSEtypeIsComponents = FALSE) {
+BoxPlot <- function(
+  res, 
+  settings, 
+  group = n, 
+  coord, 
+  MSEtype, 
+  MSEtypeIsComponents = FALSE) {
   # Plots boxplots of different types of MSE for different settings
   # res: result of simulation
   # settings: settings for which to plot box plot
@@ -20,25 +27,148 @@ BoxPlot <- function(res, settings, group = n, coord, MSEtype, MSEtypeIsComponent
   data <- NULL
   mse_type_listnumber <- ifelse(MSEtypeIsComponents, 2, 1)
   for (i in settings) {
-    estType <- c("TreeSHAP", "Emp", "Emp50", "Emp100")
-    if (as.numeric(complete_res[[i]]$params[1]) > 500) {
-      estType <- c(estType, "Emp500")
+    estType <- c("Path-dep.", "FastPD", "FastPD-50", "FastPD-100")
+    if (as.numeric(res[[i]]$params[1]) > 500) {
+      estType <- c(estType, "FastPD-500")
     }
     for (j in 1:length(res[[i]]$sim_res)) {
-      table <- cbind(res[[i]]$params, res[[i]]$sim_res[[j]]$stats[[mse_type_listnumber]][[MSEtype]], type = estType, row.names = NULL)
+      glex_objs <- res[[i]]$sim_res[[j]]$glex_objs
+      stats <- res[[i]]$sim_res[[j]]$stats
+
+      # stats[[1]] <- obtain_shap_MSEs(
+      #   true_shap_fun = function(...) 1,
+      #   glex_true_p = glex_objs[[1]],
+      #   to_explain = glex_objs[-1]
+      # )
+      table <- cbind(res[[i]]$params, stats[[mse_type_listnumber]][[MSEtype]], Method = estType, row.names = NULL)
       data <- rbind(data, table)
     }
   }
+  data$Method <- factor(data$Method, levels = c("FastPD", "FastPD-500", "FastPD-100", "FastPD-50", "Path-dep."))
   group_plotvar <- paste0("as.factor(", group, ")")
-  p <- ggplot(data, aes_string(x = group_plotvar, y = coord, fill = "type")) +
-    geom_boxplot(width = 0.5) +
-    labs(x = group, y = MSEtype)
-  ggsave(paste0("simulation/boxplot", coord, ".png"), plot = p, width = 10, height = 8, dpi = 300)
+  (p <- ggplot(data, aes_string(x = group_plotvar, y = coord, fill = "Method")) +
+    scale_y_log10() +
+    geom_boxplot(width = 0.8, lwd = 0.1, outlier.size = 0.5) +
+    labs(x = group, y = "Mean squared error") +
+    theme(legend.position = "right"))
+  ggsave(paste0("figures/boxplot", coord, ".pdf"), plot = p, width = 5.5, height = 4, dpi = 1200)
   return(p)
 }
 
+BoxPlot(res = complete_res, settings = c(2, 3), group = "n", coord = "x1", MSEtype = "B_shap_mse", MSEtypeIsComponents = F)
 
-# BoxPlot(res = complete_res, settings = c(2, 3), group = "n", coord = "x1", MSEtype = "A_shap_mse", MSEtypeIsComponents = F)
+
+plotComponentIters <- function(res, setting, coord, titles, true_function = NULL) {
+  # Plots the components of the glex object for all simulations together
+  # res: result of simulation
+  # setting: setting for which to plot
+  # coord: coordinate to plot components for
+  # tiles: titles of the plots
+  # true_function: insert function in plots. Set to NULL if length(coords)>2
+  p <- list(NULL)
+  for (i in 1:length(res[[setting]]$sim_res[[1]]$glex_objs)) {
+    data <- NULL
+    cat("calculating components for", c("\\hat{m}p", "TreeSHAP", "Emp", "Emp50", "Emp100", "Emp500")[i], "\n")
+    for (j in 1:100) {
+      data <- rbind(data, data.frame(
+        x = res[[setting]]$sim_res[[j]]$glex_objs[[i]]$x[[coord]],
+        m = res[[setting]]$sim_res[[j]]$glex_objs[[i]]$m[[coord]],
+        It = as.factor(j)
+      ))
+    }
+    p[[i]] <- ggplot(data, aes(x = x, y = m)) +
+      geom_line(aes(group = It), alpha = 0.05) +
+      labs(x = coord, y = paste0("\\hat{m}", substring(coord, 2, 2)), title = titles[i]) +
+      stat_function(fun = true_function, col = "red")
+  }
+  cat("plotting...", "\n")
+  plot <- p[[1]]
+  for (i in 2:length(p)) {
+    plot <- plot + p[[i]]
+  }
+  ggsave(paste0("figures/compItersS", setting, coord, ".png"), plot = plot, width = 10, height = 8, dpi = 300)
+  return(plot)
+}
+
+
+
+plotMedianShap <- function(res, setting, MSEtype, coord, titles) {
+  # Plots the shap of the glex object with median MSE
+  # res: result of simulation
+  # setting: setting for which to plot
+  # MSEtype: type of MSE for which to calculate median MSE. Number in list c("TreeSHAP", "Emp", "Emp50", "Emp100", "Emp500")
+  # coord: coordinate to plot shap values for
+  # tiles: titles of the plots
+  shapMSE <- NULL
+  for (i in 1:length(res[[setting]]$sim_res)) {
+    shapMSE[i] <- res[[setting]]$sim_res[[i]]$stats[[1]]$B_shap_mse[MSEtype, coord]
+  }
+  medianIndex <- which(shapMSE == min(shapMSE[which(shapMSE >= median(shapMSE))]))
+  p <- list(NULL)
+  x <- res[[setting]]$sim_res[[medianIndex]]$dataset$x
+  data <- data.frame(x,
+    shapA = x[, 1] + x[, 1] * x[, 2] - 0.3,
+    shapB = res[[setting]]$sim_res[[medianIndex]]$glex_objs[[1]]$shap[[coord]]
+  )
+  plot <- ggplot(reshape2::melt(data, id = colnames(x)), aes_string(x = coord, y = "value", color = "variable")) +
+    geom_point(alpha = 0.1) +
+    scale_color_manual(values = c("red", "blue")) +
+    labs(y = "shap", title = titles[1]) +
+    theme(legend.position = "none")
+  for (i in 2:length(res[[setting]]$sim_res[[medianIndex]]$glex_objs)) {
+    plotdata <- data.frame(data, shapVar = res[[setting]]$sim_res[[medianIndex]]$glex_objs[[i]]$shap[[coord]])
+    colnames(plotdata)[length(plotdata)] <- "See title" # titles[i]
+    plotdata <- reshape2::melt(plotdata, id = colnames(x))
+    p[[i]] <- ggplot(plotdata, aes_string(x = coord, y = "value", color = "variable")) +
+      geom_point(alpha = 0.1) +
+      scale_color_manual(values = c("red", "blue", "green")) +
+      labs(y = "shap", title = titles[i], color = "SHAP type")
+    plot <- plot + p[[i]]
+  }
+  plot <- plot + plot_layout(guides = "collect")
+  ggsave(paste0("figures/shaps", coord, ".pdf"), plot = plot, width = 10, height = 8, dpi = 300)
+  return(plot)
+}
+
+
+plotMedianShapModel <- function(res, setting, MSEtype, coord) {
+  # Plots the shap of the glex object with median MSE
+  # res: result of simulation
+  # setting: setting for which to plot
+  # MSEtype: type of MSE for which to calculate median MSE. Number in list c("TreeSHAP", "Emp", "Emp50", "Emp100", "Emp500")
+  # coord: coordinate to plot shap values for
+  # tiles: titles of the plots
+  shapMSE <- NULL
+  for (i in 1:length(res[[setting]]$sim_res)) {
+    shapMSE[i] <- res[[setting]]$sim_res[[i]]$stats[[1]]$B_shap_mse[MSEtype, coord]
+  }
+  medianIndex <- which(shapMSE == min(shapMSE[which(shapMSE >= median(shapMSE))]))
+  x <- res[[setting]]$sim_res[[medianIndex]]$dataset$x
+  data <- tibble(x1 = x[,1], x2 = x[,2],
+    "Model SHAP" = res[[setting]]$sim_res[[medianIndex]]$glex_objs[[1]]$shap[[coord]]
+  ) 
+  # Create the left plot with shapB and treeshap
+  data_left <- tibble(data, Estimate = res[[setting]]$sim_res[[medianIndex]]$glex_objs[[2]]$shap[[coord]])
+  data_left <- reshape2::melt(data_left, id = colnames(x))
+  data_left <- rename(data_left, Variable = variable)
+  plot_left <- ggplot(data_left, aes_string(x = coord)) +
+    geom_point(aes(y = value, color = Variable), alpha = 0.3) +
+    scale_color_manual(values = c("red", "blue")) +
+    labs(y = "$\\phi_1(x)$", x = "$x_1$", title = "Tree SHAP-Path", color = "Type")
+
+
+  data_right <- tibble(data, Estimate = res[[setting]]$sim_res[[medianIndex]]$glex_objs[[3]]$shap[[coord]])
+  data_right <- reshape2::melt(data_right, id = colnames(x))
+  data_right <- rename(data_right, Variable = variable)
+  plot_right <- ggplot(data_right, aes_string(x = coord)) +
+    geom_point(aes(y = value, color = Variable), alpha = 0.3) +
+    scale_color_manual(values = c("red", "blue")) +
+    labs(y = NULL, x = "$x_1$", title = "FastPD", color = "Type")
+
+  combined_plot <- plot_left + plot_right + plot_layout(guides = "collect") & theme(legend.position = 'bottom')
+  combined_plot
+}
+
 
 
 plotMedianComponents <- function(
@@ -136,81 +266,90 @@ plotMedianComponents <- function(
 }
 
 
-plotComponentIters <- function(res, setting, coord, titles, true_function = NULL) {
-  # Plots the components of the glex object for all simulations together
+
+plotMedianComponentsOnePlot <- function(
+    res, setting, MSEtype, coord, titles,
+    xy_labs = c(
+      substitute(x[s], list(s = coord)),
+      substitute(hat(m)[s], list(s = coord))
+    ),
+    true_function = NULL) {
+  # Plots the components of the glex object with median MSE
   # res: result of simulation
   # setting: setting for which to plot
+  # MSEtype: type of MSE for which to calculate median MSE. Number in list c("\\hat{m}p", "TreeSHAP", "Emp", "Emp50", "Emp100", "Emp500")
   # coord: coordinate to plot components for
   # tiles: titles of the plots
   # true_function: insert function in plots. Set to NULL if length(coords)>2
-  p <- list(NULL)
-  for (i in 1:length(res[[setting]]$sim_res[[1]]$glex_objs)) {
-    data <- NULL
-    cat("calculating components for", c("\\hat{m}p", "TreeSHAP", "Emp", "Emp50", "Emp100", "Emp500")[i], "\n")
-    for (j in 1:100) {
-      data <- rbind(data, data.frame(
-        x = res[[setting]]$sim_res[[j]]$glex_objs[[i]]$x[[coord]],
-        m = res[[setting]]$sim_res[[j]]$glex_objs[[i]]$m[[coord]],
-        It = as.factor(j)
-      ))
-    }
-    p[[i]] <- ggplot(data, aes(x = x, y = m)) +
-      geom_line(aes(group = It), alpha = 0.05) +
-      labs(x = coord, y = paste0("\\hat{m}", substring(coord, 2, 2)), title = titles[i]) +
-      stat_function(fun = true_function, col = "red")
-  }
-  cat("plotting...", "\n")
-  plot <- p[[1]]
-  for (i in 2:length(p)) {
-    plot <- plot + p[[i]]
-  }
-  ggsave(paste0("figures/compItersS", setting, coord, ".png"), plot = plot, width = 10, height = 8, dpi = 300)
-  return(plot)
-}
-
-
-
-plotMedianShap <- function(res, setting, MSEtype, coord, titles) {
-  # Plots the shap of the glex object with median MSE
-  # res: result of simulation
-  # setting: setting for which to plot
-  # MSEtype: type of MSE for which to calculate median MSE. Number in list c("TreeSHAP", "Emp", "Emp50", "Emp100", "Emp500")
-  # coord: coordinate to plot shap values for
-  # tiles: titles of the plots
-  shapMSE <- NULL
+  coordsString <- paste0("x", coord)
+  glexList <- list(NULL)
+  compMSE <- NULL
   for (i in 1:length(res[[setting]]$sim_res)) {
-    shapMSE[i] <- res[[setting]]$sim_res[[i]]$stats[[1]]$B_shap_mse[MSEtype, coord]
+    glexList[[i]] <- res[[setting]]$sim_res[[i]]$glex_objs
+    compMSE[i] <- res[[setting]]$sim_res[[i]]$stats[[2]]$B_m_mse[MSEtype, coordsString] # stats 2 for components
   }
-  medianIndex <- which(shapMSE == min(shapMSE[which(shapMSE >= median(shapMSE))]))
-  p <- list(NULL)
-  x <- res[[setting]]$sim_res[[medianIndex]]$dataset$x
-  data <- data.frame(x,
-    shapA = x[, 1] + x[, 1] * x[, 2] - 0.3,
-    shapB = res[[setting]]$sim_res[[medianIndex]]$glex_objs[[1]]$shap[[coord]]
-  )
-  plot <- ggplot(reshape2::melt(data, id = colnames(x)), aes_string(x = coord, y = "value", color = "variable")) +
-    geom_point(alpha = 0.1) +
-    scale_color_manual(values = c("red", "blue")) +
-    labs(y = "shap", title = titles[1]) +
-    theme(legend.position = "none")
-  for (i in 2:length(res[[setting]]$sim_res[[medianIndex]]$glex_objs)) {
-    plotdata <- data.frame(data, shapVar = res[[setting]]$sim_res[[medianIndex]]$glex_objs[[i]]$shap[[coord]])
-    colnames(plotdata)[length(plotdata)] <- "See title" # titles[i]
-    plotdata <- reshape2::melt(plotdata, id = colnames(x))
-    p[[i]] <- ggplot(plotdata, aes_string(x = coord, y = "value", color = "variable")) +
-      geom_point(alpha = 0.1) +
-      scale_color_manual(values = c("red", "blue", "green")) +
-      labs(y = "shap", title = titles[i], color = "SHAP type")
-    plot <- plot + p[[i]]
+  medianIndex <- which.min(abs(compMSE - median(compMSE)))
+  p <- list()
+
+  glex_list_median <- glexList[[medianIndex]]
+  glex_obj_B <- glex_list_median[[1]]
+  glex_list_median <- glex_list_median[-1]
+
+  to_plot <- data.frame(x = glex_obj_B$x[[coord]], Model = glex_obj_B$m[[coord]])
+  for (i in c(1, 2, 4)) {
+    to_plot[[titles[i]]] <- glex_list_median[[i]]$m[[coord]]
   }
-  plot <- plot + plot_layout(guides = "collect")
-  ggsave(paste0("figures/shaps", coord, ".png"), plot = plot, width = 10, height = 8, dpi = 300)
-  return(plot)
+
+  to_plot_long <- to_plot |>
+    pivot_longer(
+      cols = -x, # Columns to pivot (excluding 'x')
+      names_to = "type", # New column for variable names
+      values_to = "value" # New column for values
+    )
+
+  plt <- ggplot(to_plot_long, aes(x = x, y = value, color = type, linetype = type)) +
+    geom_line() +
+    labs(
+      x = xy_labs[[1]],
+      y = xy_labs[[2]]
+    ) +
+    stat_function(fun = true_function, aes(color = "Ground truth", linetype = "Ground truth"))  +
+    scale_color_manual(
+      name = "Line",
+      values = c(
+      "Path-dep." = ggplot_colors[4],
+      "FastPD" = "#282424",
+      "FastPD-100" = "#b739d3",
+      "Model" = ggplot_colors[1],
+      "Ground truth" = ggplot_colors[3]),
+      limits = c("FastPD", "FastPD-100", "Path-dep.", "Model", "Ground truth")
+    ) +
+    scale_linetype_manual(
+      name = "Line",
+      values = c(
+        "Path-dep." = "twodash",
+        "FastPD" = "twodash",
+        "FastPD-100" = "twodash",
+        "Model" = "solid",
+        "Ground truth" = "solid"
+      ),
+      limits = c("FastPD", "FastPD-100", "Path-dep.", "Model", "Ground truth")
+    ) +
+    theme(legend.position = "right")
+
+  cat("plotting for simulation", medianIndex, "\n")
+  ggsave(paste0("figures/comps_one_plot", coordsString, ".pdf"), plot = plt, width = 5, height = 3, dpi = 300)
+  return(plt)
 }
-
-
-
-load("simulation/res/complete_res.RData")
+x <- plotMedianComponentsOnePlot(
+  res = complete_res, setting = 3, MSEtype = 2, coord = 1,
+  titles = c("Path-dep.", "FastPD", "FastPD-50", "FastPD-100", "Fast-PD500"),
+  true_function = function(x) {
+    x - 2 * 0.3
+  }
+)
+setwd("simulation")
+load("./res/complete_res.RData")
 for (i in 1:3) {
   names(complete_res[[i]]) <- c("params", "sim_res")
   complete_res[[i]]$params <- data.frame(n = complete_res[[i]]$params[1], c = complete_res[[i]]$params[2], s = complete_res[[i]]$params[3])
@@ -218,11 +357,39 @@ for (i in 1:3) {
 }
 
 plotMedianComponents(
-  res = complete_res, setting = 3, MSEtype = 1, coord = 1,
+  res = complete_res, setting = 3, MSEtype = 2, coord = 1,
   titles = c("Path-dependent TreeSHAP", "EmpAll", "Emp50", "Emp100", "Emp500"),
   true_function = function(x) {
     x - 2 * 0.3
   }
 )
-# plotMedianShap(res = complete_res, setting = 3, MSEtype = 2, coord = "x1", titles = c("Reference", "TreeSHAP", "Emp", "Emp50", "Emp100", "Emp500"))
 # plotComponentIters(res = complete_res, setting = 1, coord = "x1", titles = c("Reference", "TreeSHAP", "Emp", "Emp50", "Emp100", "Emp500"), true_function = function(x) x)
+
+
+save_tex_decorator <- function(method, file_name, width = 4, height = 5) {
+  function(...) {
+    tikzDevice::tikz(
+      file = paste0("figures/", file_name, ".tex"),
+      width = width,
+      height = height
+    )
+    print(method(...))
+    dev.off()
+  }
+}
+
+tikzDevice::tikz(
+  file = "figures/shap_fastpd_vs_treeshap.tex",
+  width = 4,
+  height = 4
+)
+plotMedianShapModel(res = complete_res, setting = 2, MSEtype = 2, coord = "x1")
+dev.off()
+
+plot_save_median_shap <- save_tex_decorator(
+  method = plotMedianShapModel,
+  file_name = "shap_fastpd_vs_treeshapx1",
+  width = 8,
+  height = 4
+)
+plot_save_median_shap(res = complete_res, setting = 2, MSEtype = 2, coord = "x1")
