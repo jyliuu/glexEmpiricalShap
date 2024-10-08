@@ -2,20 +2,21 @@ library(patchwork)
 library(reshape2)
 library(tidyverse)
 source("main_loop.r")
-theme_set(theme_bw())
+theme_set(theme_bw(base_size = 8))
 theme_update(
   panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-  panel.border = element_rect(colour = "black", fill = NA, size = 0.6)
+  panel.border = element_rect(colour = "black", fill = NA, size = 0.6),
+  legend.title = element_text(size = 8),
+  legend.key.size = unit(0.4, "cm"),
+  legend.text = element_text(size = 6)  # Adjust legend text size here
 )
-ggplot_colors <- scales::hue_pal()(5) # Generates the first two default ggplot colors
 
 
 BoxPlot <- function(
-  res, 
-  settings, 
-  group = n, 
-  coord, 
-  MSEtype, 
+  res,
+  settings,
+  coord,
+  MSEtype,
   MSEtypeIsComponents = FALSE) {
   # Plots boxplots of different types of MSE for different settings
   # res: result of simulation
@@ -27,7 +28,7 @@ BoxPlot <- function(
   data <- NULL
   mse_type_listnumber <- ifelse(MSEtypeIsComponents, 2, 1)
   for (i in settings) {
-    estType <- c("Path-dep.", "FastPD", "FastPD-50", "FastPD-100")
+    estType <- c("TreeSHAP-Path.", "FastPD", "FastPD-50", "FastPD-100$^\\ast$")
     if (as.numeric(res[[i]]$params[1]) > 500) {
       estType <- c(estType, "FastPD-500")
     }
@@ -44,18 +45,34 @@ BoxPlot <- function(
       data <- rbind(data, table)
     }
   }
-  data$Method <- factor(data$Method, levels = c("FastPD", "FastPD-500", "FastPD-100", "FastPD-50", "Path-dep."))
-  group_plotvar <- paste0("as.factor(", group, ")")
-  (p <- ggplot(data, aes_string(x = group_plotvar, y = coord, fill = "Method")) +
+  data$Method <- factor(data$Method, levels = c("FastPD", "FastPD-500", "FastPD-100$^\\ast$", "FastPD-50", "TreeSHAP-Path."))
+
+  library(RColorBrewer)
+
+  # Define the palette for the reds and greens
+  reds <- brewer.pal(9, "Reds")   # 3 shades of red
+  greens <- brewer.pal(9, "Greens") # 2 shades of green
+
+
+  p <- ggplot(data, aes_string(x = "as.factor(n)", y = coord, fill = "Method")) +
     scale_y_log10() +
     geom_boxplot(width = 0.8, lwd = 0.1, outlier.size = 0.5) +
-    labs(x = group, y = "Mean squared error") +
-    theme(legend.position = "right"))
-  ggsave(paste0("figures/boxplot", coord, ".pdf"), plot = p, width = 5.5, height = 4, dpi = 1200)
+    labs(x = "$n$", y = "Mean squared error") +
+    scale_fill_manual(values = c(
+    "FastPD" = reds[7],        # Light red
+    "FastPD-500" = reds[6],    # Dark red
+    "FastPD-50" = reds[4],     # Medium red
+    "FastPD-100$^\\ast$" = greens[7],  # Darker green
+    "TreeSHAP-Path." = greens[4] # Lighter green
+    )) +
+    theme(
+      legend.position = "right",
+      legend.key.size = unit(0.4, "cm"),
+      legend.text = element_text(size = 6)  # Adjust legend text size here
+  )
+  # ggsave(paste0("figures/6boxplot", coord, ".pdf"), plot = p, width = 5.5, height = 3.5, dpi = 1200)
   return(p)
 }
-
-BoxPlot(res = complete_res, settings = c(2, 3), group = "n", coord = "x1", MSEtype = "B_shap_mse", MSEtypeIsComponents = F)
 
 
 plotComponentIters <- function(res, setting, coord, titles, true_function = NULL) {
@@ -126,7 +143,6 @@ plotMedianShap <- function(res, setting, MSEtype, coord, titles) {
     plot <- plot + p[[i]]
   }
   plot <- plot + plot_layout(guides = "collect")
-  ggsave(paste0("figures/shaps", coord, ".pdf"), plot = plot, width = 10, height = 8, dpi = 300)
   return(plot)
 }
 
@@ -156,7 +172,6 @@ plotMedianShapModel <- function(res, setting, MSEtype, coord) {
     scale_color_manual(values = c("red", "blue")) +
     labs(y = "$\\phi_1(x)$", x = "$x_1$", title = "Tree SHAP-Path", color = "Type")
 
-
   data_right <- tibble(data, Estimate = res[[setting]]$sim_res[[medianIndex]]$glex_objs[[3]]$shap[[coord]])
   data_right <- reshape2::melt(data_right, id = colnames(x))
   data_right <- rename(data_right, Variable = variable)
@@ -164,8 +179,9 @@ plotMedianShapModel <- function(res, setting, MSEtype, coord) {
     geom_point(aes(y = value, color = Variable), alpha = 0.3) +
     scale_color_manual(values = c("red", "blue")) +
     labs(y = NULL, x = "$x_1$", title = "FastPD", color = "Type")
-
   combined_plot <- plot_left + plot_right + plot_layout(guides = "collect") & theme(legend.position = 'bottom')
+  # ggsave(paste0("figures/shap_fastpd_vs_treeshap", coord, ".pdf"), plot = combined_plot, width = 3.25, height = 2.6, dpi = 300)
+  # return(plot_right)
   combined_plot
 }
 
@@ -269,10 +285,6 @@ plotMedianComponents <- function(
 
 plotMedianComponentsOnePlot <- function(
     res, setting, MSEtype, coord, titles,
-    xy_labs = c(
-      substitute(x[s], list(s = coord)),
-      substitute(hat(m)[s], list(s = coord))
-    ),
     true_function = NULL) {
   # Plots the components of the glex object with median MSE
   # res: result of simulation
@@ -281,6 +293,7 @@ plotMedianComponentsOnePlot <- function(
   # coord: coordinate to plot components for
   # tiles: titles of the plots
   # true_function: insert function in plots. Set to NULL if length(coords)>2
+  ggplot_colors <- scales::hue_pal()(5) # Generates the first two default ggplot colors
   coordsString <- paste0("x", coord)
   glexList <- list(NULL)
   compMSE <- NULL
@@ -296,6 +309,7 @@ plotMedianComponentsOnePlot <- function(
   glex_list_median <- glex_list_median[-1]
 
   to_plot <- data.frame(x = glex_obj_B$x[[coord]], Model = glex_obj_B$m[[coord]])
+  names(to_plot) <- c("x", "$\\hat{m}_1(x)$")
   for (i in c(1, 2, 4)) {
     to_plot[[titles[i]]] <- glex_list_median[[i]]$m[[coord]]
   }
@@ -310,19 +324,19 @@ plotMedianComponentsOnePlot <- function(
   plt <- ggplot(to_plot_long, aes(x = x, y = value, color = type, linetype = type)) +
     geom_line() +
     labs(
-      x = xy_labs[[1]],
-      y = xy_labs[[2]]
+      x = "$x_1$",
+      y = "Estimated $m_1(x)$"
     ) +
-    stat_function(fun = true_function, aes(color = "Ground truth", linetype = "Ground truth"))  +
+    stat_function(fun = true_function, aes(color = "$m_1^\\ast(x)$", linetype = "$m_1^\\ast(x)$"))  +
     scale_color_manual(
       name = "Line",
       values = c(
       "Path-dep." = ggplot_colors[4],
       "FastPD" = "#282424",
       "FastPD-100" = "#b739d3",
-      "Model" = ggplot_colors[1],
-      "Ground truth" = ggplot_colors[3]),
-      limits = c("FastPD", "FastPD-100", "Path-dep.", "Model", "Ground truth")
+      "$\\hat{m}_1(x)$" = ggplot_colors[1],
+      "$m_1^\\ast(x)$" = ggplot_colors[3]),
+      limits = c("FastPD", "FastPD-100", "Path-dep.", "$\\hat{m}_1(x)$", "$m_1^\\ast(x)$")
     ) +
     scale_linetype_manual(
       name = "Line",
@@ -330,18 +344,19 @@ plotMedianComponentsOnePlot <- function(
         "Path-dep." = "twodash",
         "FastPD" = "twodash",
         "FastPD-100" = "twodash",
-        "Model" = "solid",
-        "Ground truth" = "solid"
+        "$\\hat{m}_1(x)$" = "solid",
+        "$m_1^\\ast(x)$" = "solid"
       ),
-      limits = c("FastPD", "FastPD-100", "Path-dep.", "Model", "Ground truth")
+      limits = c("FastPD", "FastPD-100", "Path-dep.", "$\\hat{m}_1(x)$", "$m_1^\\ast(x)$")
     ) +
     theme(legend.position = "right")
 
   cat("plotting for simulation", medianIndex, "\n")
-  ggsave(paste0("figures/comps_one_plot", coordsString, ".pdf"), plot = plt, width = 5, height = 3, dpi = 300)
+  # ggsave(paste0("figures/comps_one_plot", coordsString, ".pdf"), plot = plt, width = 5, height = 3, dpi = 300)
   return(plt)
 }
-x <- plotMedianComponentsOnePlot(
+
+x <-plotMedianComponentsOnePlot(
   res = complete_res, setting = 3, MSEtype = 2, coord = 1,
   titles = c("Path-dep.", "FastPD", "FastPD-50", "FastPD-100", "Fast-PD500"),
   true_function = function(x) {
@@ -378,18 +393,40 @@ save_tex_decorator <- function(method, file_name, width = 4, height = 5) {
   }
 }
 
-tikzDevice::tikz(
-  file = "figures/shap_fastpd_vs_treeshap.tex",
-  width = 4,
-  height = 4
-)
-plotMedianShapModel(res = complete_res, setting = 2, MSEtype = 2, coord = "x1")
-dev.off()
+
+x <- plotMedianShapModel(res = complete_res, setting = 2, MSEtype = 2, coord = "x1")
 
 plot_save_median_shap <- save_tex_decorator(
   method = plotMedianShapModel,
-  file_name = "shap_fastpd_vs_treeshapx1",
-  width = 8,
-  height = 4
+  file_name = "shap_fastpd_vs_treeshap",
+  width = 3.25,
+  height = 2.6
 )
 plot_save_median_shap(res = complete_res, setting = 2, MSEtype = 2, coord = "x1")
+
+
+plot_save_boxplot <- save_tex_decorator(
+  method = BoxPlot,
+  file_name = "boxplotx1",
+  width = 3.25,
+  height = 2.2
+)
+plot_save_boxplot(res = complete_res, settings = c(2, 3), coord = "x1", MSEtype = "B_shap_mse", MSEtypeIsComponents = F)
+
+x <-BoxPlot(res = complete_res, settings = c(2, 3), coord = "x1", MSEtype = "B_shap_mse", MSEtypeIsComponents = F)
+
+plot_save_median_comp <- save_tex_decorator(
+  plotMedianComponentsOnePlot,
+  file_name = "comps_one_plot_x1",
+  width = 3.25,
+  height = 1.95
+)
+
+plot_save_median_comp(
+  res = complete_res, setting = 3, MSEtype = 2, coord = 1,
+  titles = c("Path-dep.", "FastPD", "FastPD-50", "FastPD-100", "Fast-PD500"),
+  true_function = function(x) {
+    x - 2 * 0.3
+  }
+)
+dev.off()

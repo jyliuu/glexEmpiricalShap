@@ -27,18 +27,17 @@ r2 <- bench_times_glex |>
 to_plot <- rbind(r1, r2)
 
 
-tikzDevice::tikz(file = "figures/runtime.tex", width = 4, height = 4)
+tikzDevice::tikz(file = "figures/runtime.tex", width = 3.25, height = 2.75)
 p1 <- ggplot(to_plot, aes(x = N, y = median, color = method)) +
   geom_point() +
   geom_line(aes(group = method)) +
   labs(
-    x = "$n_b = n_f$",
+    x = "$n_b, n_f$",
     y = "Time (s)",
     # title = "Time complexity for background = foreground",
     color = "Method"  # Set the legend title
   ) +
-  theme_minimal() +
-  theme(legend.position = "bottom")  # Set the legend position to bottom
+  theme(legend.position = "right")  # Set the legend position to bottom
 p1
 dev.off()
 p1
